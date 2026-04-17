@@ -10,6 +10,9 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 
 import yaml
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parent.parent.parent / ".env")
 
 from .config import parse_multi_account_config, validate_paired_configs
 from trendradar.utils.time import DEFAULT_TIMEZONE
