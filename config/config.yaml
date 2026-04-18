@@ -136,6 +136,46 @@ rss:
 
 
 # ===============================================================
+# 3.5 数据源 - 微信公众号（通过 wewe-rss）
+#
+# 通过 wewe-rss 项目将微信公众号文章转换为 RSS 格式，
+# 复用 TrendRadar 已有的 RSS 抓取、AI 筛选/分析、多渠道通知推送等能力。
+#
+# 前置条件：
+#   - 本地部署：需先启动 wewe-rss 服务并完成公众号订阅
+#   - Docker 部署：通过 docker-compose.yml 一键启动（auto_start=false）
+#   - wewe-rss 项目地址：https://github.com/ghost200802/wewe-rss
+#
+# enabled: 是否启用微信公众号数据获取（总开关）
+# wewe_rss_url: wewe-rss 服务地址
+# auth_code: wewe-rss 管理密码（用于 API 认证）
+# auto_start: 是否自动启动 wewe-rss 服务（Docker 部署时设为 false）
+# accounts: 公众号订阅列表
+#   - name: 公众号名称（用于自动发现 feed）
+#   - feed_id: RSS feed ID（"auto"=自动发现，或指定具体 ID）
+#   - enabled: 是否启用此公众号
+# ===============================================================
+wechat:
+  enabled: false                        # 是否启用微信公众号数据获取
+
+  # wewe-rss 服务配置
+  wewe_rss_url: "http://localhost:4000" # wewe-rss 服务地址
+  auth_code: ""                         # wewe-rss 管理密码
+  auto_start: false                     # 是否自动启动 wewe-rss 服务（Docker 部署时为 false）
+
+  # 公众号订阅列表
+  accounts: []
+  # 示例配置：
+  # accounts:
+  #   - name: "阮一峰的网络日志"
+  #     feed_id: "auto"                 # 自动发现 RSS feed ID
+  #     enabled: true
+  #   - name: "36氪"
+  #     feed_id: "specific-feed-id"     # 手动指定 feed ID
+  #     enabled: true
+
+
+# ===============================================================
 # 4. 报告模式
 #
 # 新手 5 行：

@@ -1185,6 +1185,118 @@ class NewsAnalyzer:
             print(f"[RSS] 抓取失败: {e}")
             return None, None, None, set()
 
+    def _crawl_wechat_data(self) -> Tuple[Optional[List[Dict]], Optional[List[Dict]], Optional[List[Dict]], set]:
+        """
+        执行微信公众号数据抓取
+
+        通过 wewe-rss 服务将微信公众号文章转换为 RSS 格式，
+        复用 RSS 抓取流程。
+
+        Returns:
+            (rss_items, rss_new_items, raw_rss_items, rss_new_urls) 元组
+            格式与 _crawl_rss_data 一致，未启用时返回 (None, None, None, set())
+        """
+        wechat_config = self.ctx.config.get("WECHAT", {})
+        if not wechat_config.get("ENABLED", False):
+            return None, None, None, set()
+
+        accounts = wechat_config.get("ACCOUNTS", [])
+        if not accounts:
+            print("[微信] 未配置任何公众号订阅")
+            return None, None, None, set()
+
+        try:
+            from trendradar.crawler.wechat import WeWeRssService, WeChatFeedDiscovery, WeChatBridge
+
+            wewe_rss_url = wechat_config.get("WEWE_RSS_URL", "http://localhost:4000")
+            auth_code = wechat_config.get("AUTH_CODE", "")
+            auto_start = wechat_config.get("AUTO_START", False)
+
+            # 1. 检查 wewe-rss 服务
+            service = WeWeRssService(base_url=wewe_rss_url, auth_code=auth_code, auto_start=auto_start)
+            if not service.ensure_available():
+                return None, None, None, set()
+
+            # 2. 发现公众号 RSS feed
+            discovery = WeChatFeedDiscovery(base_url=wewe_rss_url, auth_code=auth_code)
+            discovered_feeds = discovery.discover_feeds(accounts)
+            if not discovered_feeds:
+                print("[微信] 未发现任何可用的公众号 RSS feed")
+                return None, None, None, set()
+
+            # 3. 使用 RSSFetcher 抓取微信公众号数据
+            rss_config = self.ctx.rss_config
+            rss_proxy_url = rss_config.get("PROXY_URL", "") or self.proxy_url or ""
+            timezone = self.ctx.config.get("TIMEZONE", DEFAULT_TIMEZONE)
+            freshness_config = rss_config.get("FRESHNESS_FILTER", {})
+            freshness_enabled = freshness_config.get("ENABLED", True)
+            default_max_age_days = freshness_config.get("MAX_AGE_DAYS", 3)
+
+            bridge = WeChatBridge(
+                wewe_rss_url=wewe_rss_url,
+                auth_code=auth_code,
+                request_interval=rss_config.get("REQUEST_INTERVAL", 2000),
+                timeout=rss_config.get("TIMEOUT", 15),
+                use_proxy=rss_config.get("USE_PROXY", False),
+                proxy_url=rss_proxy_url,
+                timezone=timezone,
+                freshness_enabled=freshness_enabled,
+                default_max_age_days=default_max_age_days,
+            )
+
+            rss_data = bridge.fetch_wechat_feeds(discovered_feeds)
+            if not rss_data:
+                print("[微信] 抓取微信公众号 RSS 数据失败")
+                return None, None, None, set()
+
+            # 4. 保存到存储后端
+            if self.storage_manager.save_rss_data(rss_data):
+                print("[微信] 数据已保存到存储后端")
+                return self._process_rss_data_by_mode(rss_data)
+            else:
+                print("[微信] 数据保存失败")
+                return None, None, None, set()
+
+        except Exception as e:
+            print(f"[微信] 微信公众号数据抓取失败: {e}")
+            if self.ctx.config.get("DEBUG", False):
+                import traceback
+                traceback.print_exc()
+            return None, None, None, set()
+
+    def _merge_rss_data(
+        self,
+        base_items: Optional[List[Dict]],
+        base_new_items: Optional[List[Dict]],
+        base_raw_items: Optional[List[Dict]],
+        base_new_urls: set,
+        extra_items: Optional[List[Dict]],
+        extra_new_items: Optional[List[Dict]],
+        extra_raw_items: Optional[List[Dict]],
+        extra_new_urls: set,
+    ) -> Tuple[Optional[List[Dict]], Optional[List[Dict]], Optional[List[Dict]], set]:
+        """合并两组 RSS 数据"""
+        merged_items = list(base_items) if base_items else []
+        merged_new_items = list(base_new_items) if base_new_items else []
+        merged_raw_items = list(base_raw_items) if base_raw_items else []
+        merged_new_urls = set(base_new_urls)
+
+        if extra_items:
+            merged_items.extend(extra_items)
+        if extra_new_items:
+            merged_new_items.extend(extra_new_items)
+        if extra_raw_items:
+            merged_raw_items.extend(extra_raw_items)
+        if extra_new_urls:
+            merged_new_urls.update(extra_new_urls)
+
+        return (
+            merged_items or None,
+            merged_new_items or None,
+            merged_raw_items or None,
+            merged_new_urls,
+        )
+
     def _process_rss_data_by_mode(self, rss_data) -> Tuple[Optional[List[Dict]], Optional[List[Dict]], Optional[List[Dict]], set]:
         """
         按报告模式处理 RSS 数据，返回与热榜相同格式的统计结构
@@ -1715,6 +1827,14 @@ class NewsAnalyzer:
 
             # 抓取 RSS 数据（如果启用），返回统计条目、新增条目和原始条目
             rss_items, rss_new_items, raw_rss_items, rss_new_urls = self._crawl_rss_data()
+
+            # 抓取微信公众号数据（如果启用），通过 wewe-rss 转换为 RSS 格式
+            wechat_items, wechat_new_items, wechat_raw_items, wechat_new_urls = self._crawl_wechat_data()
+            if any([wechat_items, wechat_new_items, wechat_raw_items, wechat_new_urls]):
+                rss_items, rss_new_items, raw_rss_items, rss_new_urls = self._merge_rss_data(
+                    rss_items, rss_new_items, raw_rss_items, rss_new_urls,
+                    wechat_items, wechat_new_items, wechat_raw_items, wechat_new_urls,
+                )
 
             # 执行模式策略，传递 RSS 数据用于合并推送
             self._execute_mode_strategy(

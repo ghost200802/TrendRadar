@@ -1,10 +1,29 @@
 services:
+  wewe-rss:
+    image: cooderl/wewe-rss:latest
+    container_name: wewe-rss
+    restart: unless-stopped
+
+    ports:
+      - "127.0.0.1:3000:3000"
+
+    environment:
+      - TZ=Asia/Shanghai
+      - WECHAT_COOKIE=${WECHAT_COOKIE:-}
+      - AUTH_CODE=${WECHAT_AUTH_CODE:-}
+
+    volumes:
+      - wewe-rss-data:/app/data
+
   trendradar:
     build:
       context: ..
       dockerfile: docker/Dockerfile
     container_name: trendradar
     restart: unless-stopped
+
+    depends_on:
+      - wewe-rss
 
     ports:
       - "127.0.0.1:${WEBSERVER_PORT:-8080}:${WEBSERVER_PORT:-8080}"
@@ -56,6 +75,10 @@ services:
       - CRON_SCHEDULE=${CRON_SCHEDULE:-*/30 * * * *}
       - RUN_MODE=${RUN_MODE:-cron}
       - IMMEDIATE_RUN=${IMMEDIATE_RUN:-true}
+      # 微信公众号（wewe-rss）
+      - WECHAT_ENABLED=${WECHAT_ENABLED:-false}
+      - WECHAT_WEWE_RSS_URL=${WECHAT_WEWE_RSS_URL:-http://wewe-rss:3000}
+      - WECHAT_AUTH_CODE=${WECHAT_AUTH_CODE:-}
 
   trendradar-mcp:
     build:
@@ -74,3 +97,6 @@ services:
     environment:
       - TZ=Asia/Shanghai
       - MCP_PORT=${MCP_PORT:-3333}
+
+volumes:
+  wewe-rss-data:

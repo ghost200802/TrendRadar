@@ -1,0 +1,3 @@
+[submodule "wewe-rss"]
+	path = wewe-rss
+	url = https://github.com/ghost200802/wewe-rss.git
